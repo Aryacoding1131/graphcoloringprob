@@ -1,0 +1,139 @@
+import streamlit as st
+import networkx as nx
+import matplotlib.pyplot as plt
+import time
+import re
+from groq import Groq
+
+# ---- Groq Setup ----
+client = Groq(api_key="Paste Your own API key, Thank you")
+
+# ---- Function to query Groq ----
+def explain_step(node, colour, used_colours):
+    """Ask Groq to explain the step in simple text."""
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a clear and friendly AI tutor explaining how graph colouring works. "
+                        "Explain in simple words only. Avoid emojis and special characters. "
+                        "Focus on why the algorithm chose that colour based on neighbouring nodes."
+                        "Please summrize everything at end"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"In a graph colouring problem, node {node} was coloured {colour} "
+                        f"because its neighbours already have colours {list(used_colours)}. "
+                        "Explain clearly why this choice is valid in simple terms."
+                    ),
+                },
+            ],
+        )
+        text = response.choices[0].message.content.strip()
+        # Clean unwanted characters
+        text = re.sub(r'[^\w\s,.!?\'"()\-:;]', '', text)
+        return text
+    except Exception as e:
+        return f"⚠️ Error getting explanation: {e}"
+
+# ----------------- Streamlit UI Setup -----------------
+st.set_page_config(page_title="Graph Colouring Visualization", layout="wide")
+st.title("🎨 Graph Colouring Problem – Greedy Algorithm Visualization")
+st.write("**Name:** Arya Rohan Rachamalla")
+st.write("**Reg no:** 3122256002002")
+st.write("**Scope:** To visualize and understand the working of the Graph Colouring problem using the Greedy Algorithm with AI explanations.")
+
+# ----------------- Initialize Graph -----------------
+if "G" not in st.session_state:
+    st.session_state.G = nx.Graph()
+
+    st.session_state.G.add_edges_from([
+        (0, 1), (0, 2), (0, 5), (0, 6),
+        (1, 2), (1, 3), (1, 7),
+        (2, 3), (2, 8), (2, 9),
+        (3, 4), (3, 7), (3, 8),
+        (4, 5), (4, 8), (4, 9),
+        (5, 6), (5, 9),
+        (6, 7), (6, 8),
+        (7, 9), (7, 8),
+        (8, 9)
+    ])
+
+    st.session_state.pos = nx.spring_layout(st.session_state.G, seed=50)
+    st.session_state.colours = {}
+    st.session_state.started = False
+    st.session_state.chromatic_number = 0
+
+# ----------------- Sidebar Controls -----------------
+with st.sidebar:
+    if st.button("▶ Start Graph Colouring"):
+        st.session_state.colours = {}
+        st.session_state.started = True
+        st.session_state.chromatic_number = 0
+
+    if st.button("🔄 Reset"):
+        st.session_state.colours = {}
+        st.session_state.started = False
+        st.session_state.chromatic_number = 0
+
+# ----------------- Graph Drawing Function -----------------
+graph_placeholder = st.empty()
+explanation_placeholder = st.empty()
+
+def draw_graph(colour_map):
+    fig, ax = plt.subplots(figsize=(7, 6))
+    node_colors = [colour_map.get(node, "lightgray") for node in st.session_state.G.nodes()]
+    nx.draw(
+        st.session_state.G,
+        st.session_state.pos,
+        with_labels=True,
+        node_color=node_colors,
+        node_size=700,
+        font_size=12,
+        ax=ax,
+        edge_color="gray"
+    )
+    graph_placeholder.pyplot(fig)
+
+# ----------------- Colours -----------------
+available_colours = [
+    "red", "blue", "green", "yellow", "orange", "purple",
+    "pink", "cyan", "magenta", "lime", "teal", "brown"
+]
+
+# ----------------- Greedy Graph Colouring with Explanations -----------------
+if st.session_state.started:
+    vertices = list(st.session_state.G.nodes())
+
+    for u in vertices:
+        used_colours = set()
+
+        # Find colours of adjacent vertices
+        for v in st.session_state.G.neighbors(u):
+            if v in st.session_state.colours:
+                used_colours.add(st.session_state.colours[v])
+
+        # Pick smallest unused colour
+        for colour in available_colours:
+            if colour not in used_colours:
+                st.session_state.colours[u] = colour
+                break
+
+        # Draw and explain after colouring each node
+        draw_graph(st.session_state.colours)
+        st.info(f"Node {u} coloured with {st.session_state.colours[u]}")
+
+        explanation = explain_step(u, st.session_state.colours[u], used_colours)
+        explanation_placeholder.markdown(f"**AI Explanation:** {explanation}")
+
+        time.sleep(1)  # small delay for animation effect
+
+    # Final Chromatic Number
+    st.session_state.chromatic_number = len(set(st.session_state.colours.values()))
+    st.success(f"✅ Graph colouring completed! Minimum colours used (Chromatic Number) = {st.session_state.chromatic_number}")
+    st.session_state.started = False
